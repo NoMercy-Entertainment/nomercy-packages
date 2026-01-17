@@ -1,0 +1,245 @@
+name: 'Update Package Repository'
+
+on:
+  # Check for new releases every 15 minutes
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., 0.1.210) - leave empty to auto-detect latest'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  update_packages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Get latest release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "Using manually specified version: ${{ inputs.version }}"
+          else
+            # Fetch latest release from main repo
+            LATEST=$(curl -s https://api.github.com/repos/NoMercy-Entertainment/NoMercyMediaServer/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+            echo "version=${LATEST}" >> $GITHUB_OUTPUT
+            echo "Detected latest version: ${LATEST}"
+          fi
+
+      - name: Check if already deployed
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Check if this version is already deployed by looking at the current CNAME or a version file
+          if [ -f "deployed_version.txt" ]; then
+            DEPLOYED=$(cat deployed_version.txt)
+            if [ "$DEPLOYED" = "$VERSION" ]; then
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "Version ${VERSION} already deployed, skipping"
+            else
+              echo "skip=false" >> $GITHUB_OUTPUT
+              echo "New version detected: ${VERSION} (was: ${DEPLOYED})"
+            fi
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "No previous deployment found"
+          fi
+
+      - name: Save deployed version
+        if: steps.check.outputs.skip != 'true'
+        run: echo "${{ steps.version.outputs.version }}" > deployed_version.txt
+
+      - name: Create website directory
+        if: steps.check.outputs.skip != 'true'
+        run: mkdir -p ./website
+
+      - name: Create Public Key File
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          echo "${{ vars.GPG_PUBLIC_KEY }}" > website/nomercy_repo.gpg.pub
+          chmod 644 website/nomercy_repo.gpg.pub
+
+      - name: Download packages from GitHub Release
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          RELEASE_URL="https://github.com/NoMercy-Entertainment/NoMercyMediaServer/releases/download/v${VERSION}"
+
+          mkdir -p downloads
+
+          # Download DEB packages
+          echo "Downloading nomercymediaserver_${VERSION}_amd64.deb..."
+          curl -L -o "downloads/nomercymediaserver_${VERSION}_amd64.deb" \
+            "${RELEASE_URL}/nomercymediaserver_${VERSION}_amd64.deb" || echo "MediaServer DEB not found"
+
+          echo "Downloading nomercyapp_${VERSION}_amd64.deb..."
+          curl -L -o "downloads/nomercyapp_${VERSION}_amd64.deb" \
+            "${RELEASE_URL}/nomercyapp_${VERSION}_amd64.deb" || echo "App DEB not found"
+
+          # Download RPM packages
+          echo "Downloading RPM packages..."
+          curl -L -o "downloads/nomercymediaserver-${VERSION}-1.x86_64.rpm" \
+            "${RELEASE_URL}/nomercymediaserver-${VERSION}-1.x86_64.rpm" || echo "MediaServer RPM not found"
+
+          curl -L -o "downloads/nomercyapp-${VERSION}-1.x86_64.rpm" \
+            "${RELEASE_URL}/nomercyapp-${VERSION}-1.x86_64.rpm" || echo "App RPM not found"
+
+          # Download Arch packages
+          echo "Downloading Arch packages..."
+          curl -L -o "downloads/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" \
+            "${RELEASE_URL}/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" || echo "MediaServer Arch not found"
+
+          curl -L -o "downloads/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" \
+            "${RELEASE_URL}/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" || echo "App Arch not found"
+
+          echo "=== Downloaded files ==="
+          ls -la downloads/
+
+      - name: Setup APT Repository
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Create APT repository structure
+          mkdir -p website/apt/pool/main/n/nomercymediaserver
+          mkdir -p website/apt/pool/main/n/nomercyapp
+          mkdir -p website/apt/dists/stable/main/binary-amd64
+
+          # Copy DEB files
+          if [ -f "downloads/nomercymediaserver_${VERSION}_amd64.deb" ]; then
+            cp "downloads/nomercymediaserver_${VERSION}_amd64.deb" "website/apt/pool/main/n/nomercymediaserver/"
+            cd website/apt/pool/main/n/nomercymediaserver
+            ln -sf "nomercymediaserver_${VERSION}_amd64.deb" "nomercymediaserver_latest_amd64.deb"
+            cd -
+          fi
+
+          if [ -f "downloads/nomercyapp_${VERSION}_amd64.deb" ]; then
+            cp "downloads/nomercyapp_${VERSION}_amd64.deb" "website/apt/pool/main/n/nomercyapp/"
+            cd website/apt/pool/main/n/nomercyapp
+            ln -sf "nomercyapp_${VERSION}_amd64.deb" "nomercyapp_latest_amd64.deb"
+            cd -
+          fi
+
+          # Generate Packages index
+          cd website/apt
+          dpkg-scanpackages --multiversion pool/ > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+          cd -
+
+      - name: Setup RPM Repository
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          mkdir -p website/rpm/packages
+
+          # Copy RPM files
+          cp downloads/*.rpm website/rpm/packages/ 2>/dev/null || echo "No RPM files to copy"
+
+          # Generate RPM repo metadata
+          cd website/rpm
+          createrepo_c . || echo "createrepo_c not available, skipping"
+          cd -
+
+      - name: Setup Arch Repository
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          mkdir -p website/arch/x86_64
+
+          # Copy Arch packages
+          cp downloads/*.pkg.tar.zst website/arch/x86_64/ 2>/dev/null || echo "No Arch files to copy"
+
+      - name: Sign APT Repository
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          # Import GPG key
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+          cd website/apt/dists/stable
+
+          # Create Release file
+          cat > Release << 'EOF'
+          Origin: NoMercy Entertainment
+          Label: NoMercy
+          Suite: stable
+          Codename: stable
+          Version: 1.0
+          Architectures: amd64
+          Components: main
+          Description: NoMercy Entertainment Repository
+          EOF
+          echo "Date: $(date -u '+%a, %d %b %Y %H:%M:%S UTC')" >> Release
+          echo "SHA256:" >> Release
+
+          # Calculate hashes for metadata files
+          for file in main/binary-amd64/Packages main/binary-amd64/Packages.gz; do
+            if [ -f "$file" ]; then
+              sha256=$(sha256sum "${file}" | cut -d' ' -f1)
+              size=$(stat -c%s "${file}")
+              echo " ${sha256} ${size} ${file}" >> Release
+            fi
+          done
+
+          # Sign Release file
+          gpg --batch --yes --clear-sign -o InRelease Release
+          gpg --batch --yes --detach-sign --armor -o Release.gpg Release
+
+      - name: Generate Repository Website
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Copy website templates
+          cp -r .github/actions/generate-repository-website/templates/* website/ 2>/dev/null || true
+
+          # Replace version placeholder
+          if [ -f "website/index.html" ]; then
+            sed -i "s/{{VERSION}}/${VERSION}/g" website/index.html
+          fi
+
+          # Create assets directory and copy files
+          mkdir -p website/assets
+          cp .github/actions/generate-repository-website/templates/*.css website/assets/ 2>/dev/null || true
+          cp .github/actions/generate-repository-website/templates/*.js website/assets/ 2>/dev/null || true
+
+          # Create .nojekyll file
+          touch website/.nojekyll
+
+          # Create CNAME
+          echo "repo.nomercy.tv" > website/CNAME
+
+          echo "=== Website contents ==="
+          find website -type f | head -50
+
+      - name: Deploy to GitHub Pages
+        if: steps.check.outputs.skip != 'true'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website
+          cname: repo.nomercy.tv
+          force_orphan: true
+
+      - name: Commit version tracker
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployed_version.txt
+          git commit -m "Update deployed version to ${{ steps.version.outputs.version }}" || echo "No changes to commit"
+          git push
