@@ -6,10 +6,11 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to deploy (e.g., 0.1.210) - leave empty to auto-detect latest'
+      force:
+        description: 'Force rebuild even if no changes detected'
         required: false
-        type: string
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -23,44 +24,45 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Get latest release version
-        id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Get all releases from main repo
+        id: releases
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-            echo "Using manually specified version: ${{ inputs.version }}"
-          else
-            # Fetch latest release from main repo
-            LATEST=$(curl -s https://api.github.com/repos/NoMercy-Entertainment/NoMercyMediaServer/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-            echo "version=${LATEST}" >> $GITHUB_OUTPUT
-            echo "Detected latest version: ${LATEST}"
-          fi
+          # Fetch all releases (non-prerelease, non-draft)
+          RELEASES=$(curl -s "https://api.github.com/repos/NoMercy-Entertainment/NoMercyMediaServer/releases" | \
+            jq -r '[.[] | select(.prerelease == false and .draft == false) | .tag_name | ltrimstr("v")] | sort | join(",")')
 
-      - name: Check if already deployed
+          echo "Available releases: ${RELEASES}"
+          echo "releases=${RELEASES}" >> $GITHUB_OUTPUT
+
+          # Get latest version for website display
+          LATEST=$(echo "${RELEASES}" | tr ',' '\n' | sort -V | tail -1)
+          echo "latest=${LATEST}" >> $GITHUB_OUTPUT
+          echo "Latest version: ${LATEST}"
+
+      - name: Check if sync needed
         id: check
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          RELEASES="${{ steps.releases.outputs.releases }}"
 
-          # Check if this version is already deployed by looking at the current CNAME or a version file
-          if [ -f "deployed_version.txt" ]; then
-            DEPLOYED=$(cat deployed_version.txt)
-            if [ "$DEPLOYED" = "$VERSION" ]; then
+          if [ -f "deployed_versions.txt" ]; then
+            DEPLOYED=$(cat deployed_versions.txt)
+            if [ "$DEPLOYED" = "$RELEASES" ] && [ "${{ inputs.force }}" != "true" ]; then
               echo "skip=true" >> $GITHUB_OUTPUT
-              echo "Version ${VERSION} already deployed, skipping"
+              echo "No changes detected, skipping"
             else
               echo "skip=false" >> $GITHUB_OUTPUT
-              echo "New version detected: ${VERSION} (was: ${DEPLOYED})"
+              echo "Changes detected:"
+              echo "  Deployed: ${DEPLOYED}"
+              echo "  Available: ${RELEASES}"
             fi
           else
             echo "skip=false" >> $GITHUB_OUTPUT
             echo "No previous deployment found"
           fi
 
-      - name: Save deployed version
+      - name: Save deployed versions
         if: steps.check.outputs.skip != 'true'
-        run: echo "${{ steps.version.outputs.version }}" > deployed_version.txt
+        run: echo "${{ steps.releases.outputs.releases }}" > deployed_versions.txt
 
       - name: Create website directory
         if: steps.check.outputs.skip != 'true'
@@ -72,64 +74,80 @@ jobs:
           echo "${{ vars.GPG_PUBLIC_KEY }}" > website/nomercy_repo.gpg.pub
           chmod 644 website/nomercy_repo.gpg.pub
 
-      - name: Download packages from GitHub Release
+      - name: Download packages for all releases
         if: steps.check.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          RELEASE_URL="https://github.com/NoMercy-Entertainment/NoMercyMediaServer/releases/download/v${VERSION}"
-
           mkdir -p downloads
 
-          # Download DEB packages
-          echo "Downloading nomercymediaserver_${VERSION}_amd64.deb..."
-          curl -L -o "downloads/nomercymediaserver_${VERSION}_amd64.deb" \
-            "${RELEASE_URL}/nomercymediaserver_${VERSION}_amd64.deb" || echo "MediaServer DEB not found"
+          RELEASES="${{ steps.releases.outputs.releases }}"
+          IFS=',' read -ra VERSIONS <<< "$RELEASES"
 
-          echo "Downloading nomercyapp_${VERSION}_amd64.deb..."
-          curl -L -o "downloads/nomercyapp_${VERSION}_amd64.deb" \
-            "${RELEASE_URL}/nomercyapp_${VERSION}_amd64.deb" || echo "App DEB not found"
+          for VERSION in "${VERSIONS[@]}"; do
+            echo "=== Downloading packages for v${VERSION} ==="
+            RELEASE_URL="https://github.com/NoMercy-Entertainment/NoMercyMediaServer/releases/download/v${VERSION}"
 
-          # Download RPM packages
-          echo "Downloading RPM packages..."
-          curl -L -o "downloads/nomercymediaserver-${VERSION}-1.x86_64.rpm" \
-            "${RELEASE_URL}/nomercymediaserver-${VERSION}-1.x86_64.rpm" || echo "MediaServer RPM not found"
+            # Download DEB packages
+            curl -fL -o "downloads/nomercymediaserver_${VERSION}_amd64.deb" \
+              "${RELEASE_URL}/nomercymediaserver_${VERSION}_amd64.deb" 2>/dev/null || rm -f "downloads/nomercymediaserver_${VERSION}_amd64.deb"
 
-          curl -L -o "downloads/nomercyapp-${VERSION}-1.x86_64.rpm" \
-            "${RELEASE_URL}/nomercyapp-${VERSION}-1.x86_64.rpm" || echo "App RPM not found"
+            curl -fL -o "downloads/nomercyapp_${VERSION}_amd64.deb" \
+              "${RELEASE_URL}/nomercyapp_${VERSION}_amd64.deb" 2>/dev/null || rm -f "downloads/nomercyapp_${VERSION}_amd64.deb"
 
-          # Download Arch packages
-          echo "Downloading Arch packages..."
-          curl -L -o "downloads/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" \
-            "${RELEASE_URL}/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" || echo "MediaServer Arch not found"
+            # Download RPM packages
+            curl -fL -o "downloads/nomercymediaserver-${VERSION}-1.x86_64.rpm" \
+              "${RELEASE_URL}/nomercymediaserver-${VERSION}-1.x86_64.rpm" 2>/dev/null || rm -f "downloads/nomercymediaserver-${VERSION}-1.x86_64.rpm"
 
-          curl -L -o "downloads/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" \
-            "${RELEASE_URL}/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" || echo "App Arch not found"
+            curl -fL -o "downloads/nomercyapp-${VERSION}-1.x86_64.rpm" \
+              "${RELEASE_URL}/nomercyapp-${VERSION}-1.x86_64.rpm" 2>/dev/null || rm -f "downloads/nomercyapp-${VERSION}-1.x86_64.rpm"
 
-          echo "=== Downloaded files ==="
+            # Download Arch packages
+            curl -fL -o "downloads/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" \
+              "${RELEASE_URL}/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" 2>/dev/null || rm -f "downloads/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst"
+
+            curl -fL -o "downloads/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" \
+              "${RELEASE_URL}/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" 2>/dev/null || rm -f "downloads/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst"
+          done
+
+          echo "=== All downloaded files ==="
           ls -la downloads/
+
+          # Verify at least one DEB was downloaded
+          if ! ls downloads/*.deb 1>/dev/null 2>&1; then
+            echo "ERROR: No DEB packages found!"
+            exit 1
+          fi
 
       - name: Setup APT Repository
         if: steps.check.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          LATEST="${{ steps.releases.outputs.latest }}"
 
           # Create APT repository structure
           mkdir -p website/apt/pool/main/n/nomercymediaserver
           mkdir -p website/apt/pool/main/n/nomercyapp
           mkdir -p website/apt/dists/stable/main/binary-amd64
 
-          # Copy DEB files
-          if [ -f "downloads/nomercymediaserver_${VERSION}_amd64.deb" ]; then
-            cp "downloads/nomercymediaserver_${VERSION}_amd64.deb" "website/apt/pool/main/n/nomercymediaserver/"
+          # Copy all DEB files
+          for deb in downloads/*_amd64.deb; do
+            [ -f "$deb" ] || continue
+            filename=$(basename "$deb")
+            if [[ "$filename" == nomercymediaserver_* ]]; then
+              cp "$deb" "website/apt/pool/main/n/nomercymediaserver/"
+            elif [[ "$filename" == nomercyapp_* ]]; then
+              cp "$deb" "website/apt/pool/main/n/nomercyapp/"
+            fi
+          done
+
+          # Create latest symlinks
+          if [ -f "website/apt/pool/main/n/nomercymediaserver/nomercymediaserver_${LATEST}_amd64.deb" ]; then
             cd website/apt/pool/main/n/nomercymediaserver
-            ln -sf "nomercymediaserver_${VERSION}_amd64.deb" "nomercymediaserver_latest_amd64.deb"
+            ln -sf "nomercymediaserver_${LATEST}_amd64.deb" "nomercymediaserver_latest_amd64.deb"
             cd -
           fi
 
-          if [ -f "downloads/nomercyapp_${VERSION}_amd64.deb" ]; then
-            cp "downloads/nomercyapp_${VERSION}_amd64.deb" "website/apt/pool/main/n/nomercyapp/"
+          if [ -f "website/apt/pool/main/n/nomercyapp/nomercyapp_${LATEST}_amd64.deb" ]; then
             cd website/apt/pool/main/n/nomercyapp
-            ln -sf "nomercyapp_${VERSION}_amd64.deb" "nomercyapp_latest_amd64.deb"
+            ln -sf "nomercyapp_${LATEST}_amd64.deb" "nomercyapp_latest_amd64.deb"
             cd -
           fi
 
@@ -139,14 +157,15 @@ jobs:
           gzip -k -f dists/stable/main/binary-amd64/Packages
           cd -
 
+          echo "=== APT pool contents ==="
+          find website/apt/pool -type f -name "*.deb"
+
       - name: Setup RPM Repository
         if: steps.check.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
           mkdir -p website/rpm/packages
 
-          # Copy RPM files
+          # Copy all RPM files
           cp downloads/*.rpm website/rpm/packages/ 2>/dev/null || echo "No RPM files to copy"
 
           # Generate RPM repo metadata
@@ -157,11 +176,9 @@ jobs:
       - name: Setup Arch Repository
         if: steps.check.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
           mkdir -p website/arch/x86_64
 
-          # Copy Arch packages
+          # Copy all Arch packages
           cp downloads/*.pkg.tar.zst website/arch/x86_64/ 2>/dev/null || echo "No Arch files to copy"
 
       - name: Sign APT Repository
@@ -202,14 +219,14 @@ jobs:
       - name: Generate Repository Website
         if: steps.check.outputs.skip != 'true'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          LATEST="${{ steps.releases.outputs.latest }}"
 
           # Copy website templates
           cp -r .github/actions/generate-repository-website/templates/* website/ 2>/dev/null || true
 
-          # Replace version placeholder
+          # Replace version placeholder with latest
           if [ -f "website/index.html" ]; then
-            sed -i "s/{{VERSION}}/${VERSION}/g" website/index.html
+            sed -i "s/{{VERSION}}/${LATEST}/g" website/index.html
           fi
 
           # Create assets directory and copy files
@@ -240,6 +257,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deployed_version.txt
-          git commit -m "Update deployed version to ${{ steps.version.outputs.version }}" || echo "No changes to commit"
+          git add deployed_versions.txt
+          git commit -m "Sync with releases: ${{ steps.releases.outputs.releases }}" || echo "No changes to commit"
           git push
