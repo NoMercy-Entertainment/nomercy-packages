@@ -1,0 +1,31 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: NoMercy Entertainment
+Label: NoMercy
+Suite: stable
+Codename: stable
+Version: 1.0
+Architectures: amd64
+Components: main
+Description: NoMercy Entertainment Repository
+Date: Sat, 21 Feb 2026 21:27:42 UTC
+SHA256:
+ 0f7c1f47c351d2e15a71391a7f4957686a29a479b9744c7e401accf458d778b8 8608 main/binary-amd64/Packages
+ 8f2699f7e85fb18d3af791b469bef9500609e3a52a4fa62b0ee58cfb96560a6a 1996 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEZ4VoVcSeoO2w0endjqGzm56fA+8FAmmaI04ACgkQjqGzm56f
+A+9ddA//bKb1miz5Ab+xY/Wt6IOYjfty7tRJt94h9ygYVXTkrPn9xGbREX79pJMu
+YraRPZf54xkd/VchaiY+UJ7nUgFoD9wOvNKnzji17mzpemqL718jtTxfY4HaiZ+D
+A8l1mUwTP3f2o7sAR/LE8iCJ+HxJ7jLV+cKYDXLK/pKhscNvRYM2eg6A1x6u3pAm
+73ytFlFXioxvK0YhCiTJkEZDRCNwbue1181VCIDf88NXp7HlGwhHx/FnNCJB0zgA
+AWMoq30f3suBAf6CmUASEWlXK8bZdm182HwlQuzLtIRDPinbkvvIFWRAHgiOE5Zu
+7cTQ/mRvVDSFX8FzGiJHxI600VsAOsmpcj3sVUGdrrNJiT30dv967w4s9Wi1uJ4j
+ioylJpKyhmLRHb56x9TL9VG+AOrwVL3XB4wF5QLoAwUYe0fr5uM1ccvpeBXbsD1R
+qfBCBWQA1S9zM2cVOQpKKxK5l3b9tB3T+Ptqij2gZI1vLUU6gxTsFhEtebe5D0j5
+awGHHTBqaBfxqOaQsonc9aRE8M4ql9jPZPp80J1ujvCjTikpl0W7skx3v2A9ADJA
+EqCOJh8pkcwR63e4qMnMTe4ONuzpC/f/2/qgRfXJTspt1k6tfToGJE0EDRM6TLx8
+iB2zpMulhjMW9W3AbrbfcH/+kJfVtoVkqZfk6Lj9cixSpdiRiKM=
+=bwfi
+-----END PGP SIGNATURE-----
