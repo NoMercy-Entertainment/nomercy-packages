@@ -20,6 +20,9 @@ permissions:
 jobs:
   update_packages:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v5
@@ -225,14 +228,16 @@ jobs:
           echo "=== Website contents ==="
           find website -type f | head -50
 
+      - name: Upload Pages artifact
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./website
+
       - name: Deploy to GitHub Pages
         if: steps.check.outputs.skip != 'true'
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./website
-          cname: repo.nomercy.tv
-          force_orphan: true
+        id: deployment
+        uses: actions/deploy-pages@v4
 
       - name: Commit version tracker
         if: steps.check.outputs.skip != 'true'
