@@ -86,26 +86,17 @@ jobs:
             echo "=== Downloading packages for v${VERSION} ==="
             RELEASE_URL="https://github.com/NoMercy-Entertainment/nomercy-media-server/releases/download/v${VERSION}"
 
-            # Download DEB packages
-            curl -fL -o "downloads/nomercymediaserver_${VERSION}_amd64.deb" \
-              "${RELEASE_URL}/nomercymediaserver_${VERSION}_amd64.deb" 2>/dev/null || rm -f "downloads/nomercymediaserver_${VERSION}_amd64.deb"
+            # Download DEB package
+            curl -fL -o "downloads/nomercy_${VERSION}_amd64.deb" \
+              "${RELEASE_URL}/nomercy_${VERSION}_amd64.deb" 2>/dev/null || rm -f "downloads/nomercy_${VERSION}_amd64.deb"
 
-            curl -fL -o "downloads/nomercyapp_${VERSION}_amd64.deb" \
-              "${RELEASE_URL}/nomercyapp_${VERSION}_amd64.deb" 2>/dev/null || rm -f "downloads/nomercyapp_${VERSION}_amd64.deb"
+            # Download RPM package
+            curl -fL -o "downloads/nomercy-${VERSION}-1.x86_64.rpm" \
+              "${RELEASE_URL}/nomercy-${VERSION}-1.x86_64.rpm" 2>/dev/null || rm -f "downloads/nomercy-${VERSION}-1.x86_64.rpm"
 
-            # Download RPM packages
-            curl -fL -o "downloads/nomercymediaserver-${VERSION}-1.x86_64.rpm" \
-              "${RELEASE_URL}/nomercymediaserver-${VERSION}-1.x86_64.rpm" 2>/dev/null || rm -f "downloads/nomercymediaserver-${VERSION}-1.x86_64.rpm"
-
-            curl -fL -o "downloads/nomercyapp-${VERSION}-1.x86_64.rpm" \
-              "${RELEASE_URL}/nomercyapp-${VERSION}-1.x86_64.rpm" 2>/dev/null || rm -f "downloads/nomercyapp-${VERSION}-1.x86_64.rpm"
-
-            # Download Arch packages
-            curl -fL -o "downloads/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" \
-              "${RELEASE_URL}/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst" 2>/dev/null || rm -f "downloads/nomercymediaserver-${VERSION}-1-x86_64.pkg.tar.zst"
-
-            curl -fL -o "downloads/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" \
-              "${RELEASE_URL}/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst" 2>/dev/null || rm -f "downloads/nomercyapp-${VERSION}-1-x86_64.pkg.tar.zst"
+            # Download Arch package
+            curl -fL -o "downloads/nomercy-${VERSION}-1-x86_64.pkg.tar.zst" \
+              "${RELEASE_URL}/nomercy-${VERSION}-1-x86_64.pkg.tar.zst" 2>/dev/null || rm -f "downloads/nomercy-${VERSION}-1-x86_64.pkg.tar.zst"
           done
 
           echo "=== All downloaded files ==="
@@ -123,31 +114,19 @@ jobs:
           LATEST="${{ steps.releases.outputs.latest }}"
 
           # Create APT repository structure
-          mkdir -p website/apt/pool/main/n/nomercymediaserver
-          mkdir -p website/apt/pool/main/n/nomercyapp
+          mkdir -p website/apt/pool/main/n/nomercy
           mkdir -p website/apt/dists/stable/main/binary-amd64
 
           # Copy all DEB files
           for deb in downloads/*_amd64.deb; do
             [ -f "$deb" ] || continue
-            filename=$(basename "$deb")
-            if [[ "$filename" == nomercymediaserver_* ]]; then
-              cp "$deb" "website/apt/pool/main/n/nomercymediaserver/"
-            elif [[ "$filename" == nomercyapp_* ]]; then
-              cp "$deb" "website/apt/pool/main/n/nomercyapp/"
-            fi
+            cp "$deb" "website/apt/pool/main/n/nomercy/"
           done
 
-          # Create latest symlinks
-          if [ -f "website/apt/pool/main/n/nomercymediaserver/nomercymediaserver_${LATEST}_amd64.deb" ]; then
-            cd website/apt/pool/main/n/nomercymediaserver
-            ln -sf "nomercymediaserver_${LATEST}_amd64.deb" "nomercymediaserver_latest_amd64.deb"
-            cd -
-          fi
-
-          if [ -f "website/apt/pool/main/n/nomercyapp/nomercyapp_${LATEST}_amd64.deb" ]; then
-            cd website/apt/pool/main/n/nomercyapp
-            ln -sf "nomercyapp_${LATEST}_amd64.deb" "nomercyapp_latest_amd64.deb"
+          # Create latest symlink
+          if [ -f "website/apt/pool/main/n/nomercy/nomercy_${LATEST}_amd64.deb" ]; then
+            cd website/apt/pool/main/n/nomercy
+            ln -sf "nomercy_${LATEST}_amd64.deb" "nomercy_latest_amd64.deb"
             cd -
           fi
 
