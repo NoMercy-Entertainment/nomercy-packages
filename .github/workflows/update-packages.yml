@@ -38,7 +38,12 @@ jobs:
           RELEASES=$(echo "$ALL_RELEASES" | jq -r 'sort_by(split(".") | map(tonumber)) | .[-10:] | join(",")')
 
           echo "Available releases: ${RELEASES}"
-          echo "releases=${RELEASES}" >> $GITHUB_OUTPUT
+
+          # Use delimiter syntax for values containing commas
+          EOF_DELIM=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "releases<<${EOF_DELIM}" >> $GITHUB_OUTPUT
+          echo "${RELEASES}" >> $GITHUB_OUTPUT
+          echo "${EOF_DELIM}" >> $GITHUB_OUTPUT
 
           # Get latest version for website display
           LATEST=$(echo "${RELEASES}" | tr ',' '\n' | sort -V | tail -1)
