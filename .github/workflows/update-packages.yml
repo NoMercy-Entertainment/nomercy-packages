@@ -1,9 +1,8 @@
 name: 'Update Package Repository'
 
 on:
-  # Check for new releases every 15 minutes
-  schedule:
-    - cron: '*/15 * * * *'
+  repository_dispatch:
+    types: [release_published]
   workflow_dispatch:
     inputs:
       force:
