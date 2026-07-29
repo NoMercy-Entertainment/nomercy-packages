@@ -3,6 +3,13 @@ name: 'Update Package Repository'
 on:
   repository_dispatch:
     types: [release_published]
+  # The Android APK is mirrored from nomercy-app-kmp, which is PRIVATE, so it
+  # cannot dispatch here — an org secret does not reach a private repo on this
+  # plan, so a token sent from there is empty. Without a schedule the APK only
+  # refreshed when the MEDIA SERVER happened to release, which has nothing to do
+  # with the app and left the public download stale in between.
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -51,8 +58,19 @@ jobs:
 
       - name: Check if sync needed
         id: check
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           RELEASES="${{ steps.releases.outputs.releases }}"
+
+          # A new ANDROID release is a change too. Without this the comparison
+          # only tracked media-server versions, so the scheduled run that exists
+          # to pick up a new APK would decide nothing had changed and skip the
+          # very step it was scheduled for.
+          APK_TAG=$(gh release list -R NoMercy-Entertainment/nomercy-app-kmp             --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
+          RELEASES="${RELEASES} apk:${APK_TAG:-none}"
+          echo "Android release: ${APK_TAG:-none}"
+          echo "tracked=${RELEASES}" >> $GITHUB_OUTPUT
 
           if [ -f "deployed_versions.txt" ]; then
             DEPLOYED=$(cat deployed_versions.txt)
@@ -72,7 +90,7 @@ jobs:
 
       - name: Save deployed versions
         if: steps.check.outputs.skip != 'true'
-        run: echo "${{ steps.releases.outputs.releases }}" > deployed_versions.txt
+        run: echo "${{ steps.check.outputs.tracked }}" > deployed_versions.txt
 
       - name: Create website directory
         if: steps.check.outputs.skip != 'true'
