@@ -261,8 +261,14 @@ jobs:
             exit 0
           fi
 
-          if ! gh release download "$TAG" -R NoMercy-Entertainment/nomercy-app-kmp             --pattern "*.apk" --dir website/android --clobber; then
-            echo "::warning::Release $TAG has no .apk asset — skipping."
+          # Print what gh actually said. The first version of this step reported
+          # "no .apk asset" for ANY non-zero exit, which sent me looking at the
+          # release (it had one) instead of at the real error.
+          if ! gh release download "$TAG" -R NoMercy-Entertainment/nomercy-app-kmp             --pattern "*.apk" --dir website/android --clobber 2>download.err; then
+            echo "::warning::Could not download the APK from $TAG:"
+            sed 's/^/::warning::  /' download.err || true
+            echo "--- assets on that release ---"
+            gh release view "$TAG" -R NoMercy-Entertainment/nomercy-app-kmp               --json assets --jq '.assets[].name' || true
             exit 0
           fi
 
