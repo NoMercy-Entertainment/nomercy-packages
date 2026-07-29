@@ -232,6 +232,40 @@ jobs:
           echo "=== Website contents ==="
           find website -type f | head -50
 
+      # The Android app is built in nomercy-app-kmp, which is private, so a
+      # release asset URL there is only downloadable by someone with repo
+      # access — the download button on nomercy.tv 404'd for everyone else.
+      # This repo is already public and already fronted by repo.nomercy.tv, so
+      # the APK rides along with the apt/rpm packages instead of needing new
+      # hosting. Missing or unreachable is a warning, not a failure: the Linux
+      # packages are this job's actual product.
+      - name: Publish the Android APK
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          set -uo pipefail
+          mkdir -p website/android
+
+          TAG=$(gh release list -R NoMercy-Entertainment/nomercy-app-kmp             --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
+
+          if [ -z "${TAG:-}" ]; then
+            echo "::warning::No release found in nomercy-app-kmp — skipping the APK."
+            exit 0
+          fi
+
+          if ! gh release download "$TAG" -R NoMercy-Entertainment/nomercy-app-kmp             --pattern "*.apk" --dir website/android --clobber; then
+            echo "::warning::Release $TAG has no .apk asset — skipping."
+            exit 0
+          fi
+
+          # A stable filename so the website can link to one URL forever, next
+          # to the versioned one for anyone pinning a build.
+          APK=$(find website/android -maxdepth 1 -name "*.apk" | head -n1)
+          cp "$APK" website/android/nomercy.apk
+          echo "$TAG" > website/android/latest.txt
+          echo "Published $(basename "$APK") as android/nomercy.apk ($TAG)"
+
       - name: Upload Pages artifact
         if: steps.check.outputs.skip != 'true'
         uses: actions/upload-pages-artifact@v3
