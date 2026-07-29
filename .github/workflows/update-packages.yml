@@ -235,6 +235,13 @@ jobs:
       # The Android app is built in nomercy-app-kmp, which is private, so a
       # release asset URL there is only downloadable by someone with repo
       # access — the download button on nomercy.tv 404'd for everyone else.
+      #
+      # This repo pulls, rather than kmp pushing: org secrets do not reach a
+      # PRIVATE repo on this plan, so a dispatch from kmp could never carry a
+      # token (it sent an empty PAT and got a 401). This repo is public, so
+      # secrets.PAT resolves here. It runs on every media-server release, which
+      # is frequent, so the APK is never far behind — and workflow_dispatch
+      # fetches it on demand.
       # This repo is already public and already fronted by repo.nomercy.tv, so
       # the APK rides along with the apt/rpm packages instead of needing new
       # hosting. Missing or unreachable is a warning, not a failure: the Linux
