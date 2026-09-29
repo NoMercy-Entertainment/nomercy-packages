@@ -31,7 +31,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Get all releases from main repo
         id: releases
@@ -305,14 +305,18 @@ jobs:
 
       - name: Upload Pages artifact
         if: steps.check.outputs.skip != 'true'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./website
+          # v5 excludes dotfiles by default; website/.nojekyll (created above)
+          # must survive so GitHub Pages does not run Jekyll over the repo
+          # website and break the apt/rpm/arch asset paths.
+          include-hidden-files: true
 
       - name: Deploy to GitHub Pages
         if: steps.check.outputs.skip != 'true'
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Commit version tracker
         if: steps.check.outputs.skip != 'true'
