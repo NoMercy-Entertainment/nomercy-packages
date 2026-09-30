@@ -24,7 +24,6 @@ permissions:
   id-token: write
 
 jobs:
-jobs:
   # Builds and checks the whole tree. It has no environment, so a run from a
   # branch (workflow_dispatch) can prove the build without being able to deploy.
   build:
