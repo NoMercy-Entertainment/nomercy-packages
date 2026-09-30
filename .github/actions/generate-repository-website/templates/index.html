@@ -23,9 +23,9 @@
     
     <div class="content">
       <div class="nav-tabs">
-        <button class="nav-tab active" onclick="switchTab('ubuntu')">🐧 Ubuntu/Debian</button>
-        <button class="nav-tab" onclick="switchTab('fedora')">🎩 RHEL/CentOS/Fedora</button>
-        <button class="nav-tab" onclick="switchTab('arch')">⚡ Arch Linux</button>
+        <button class="nav-tab active" onclick="switchTab('ubuntu', event)">🐧 Ubuntu/Debian</button>
+        <button class="nav-tab" onclick="switchTab('fedora', event)">🎩 RHEL/CentOS/Fedora</button>
+        <button class="nav-tab" onclick="switchTab('arch', event)">⚡ Arch Linux</button>
       </div>
       
       <div id="ubuntu" class="tab-content active">
@@ -47,7 +47,7 @@
             <p>Import the NoMercy repository signing key to verify package authenticity:</p>
             <div class="code-block">
               <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-              <code>wget -O - https://repo.nomercy.tv/nomercy_repo.gpg.pub | sudo gpg --dearmor -o /etc/apt/keyrings/nomercy-archive-keyring.gpg</code>
+              <code>sudo mkdir -p /etc/apt/keyrings &amp;&amp; wget -O - https://repo.nomercy.tv/nomercy_repo.gpg.pub | sudo gpg --dearmor --yes -o /etc/apt/keyrings/nomercy-archive-keyring.gpg</code>
             </div>
           </div>
           
@@ -74,7 +74,7 @@
             <p>Install the NoMercy MediaServer components:</p>
             <div class="code-block">
               <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-              <code>sudo apt install nomercymediaserver nomercyapp</code>
+              <code>sudo apt install nomercy</code>
             </div>
           </div>
         </div>
@@ -83,12 +83,7 @@
           <div class="package-card">
             <h3>MediaServer</h3>
             <p>Core media streaming server</p>
-            <div class="package-size">nomercymediaserver</div>
-          </div>
-          <div class="package-card">
-            <h3>Desktop App</h3>
-            <p>Desktop management interface</p>
-            <div class="package-size">nomercyapp</div>
+            <div class="package-size">nomercy</div>
           </div>
         </div>
       </div>
@@ -109,10 +104,10 @@
         <div class="install-steps">
           <div class="step">
             <h3>1. Add Repository</h3>
-            <p>Add the NoMercy RPM repository configuration:</p>
+            <p>Add the NoMercy RPM repository configuration (works with dnf, dnf5 and yum):</p>
             <div class="code-block">
               <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-              <code>sudo dnf config-manager --add-repo https://repo.nomercy.tv/rpm/nomercy.repo</code>
+              <code>sudo curl -fsSL -o /etc/yum.repos.d/nomercy.repo https://repo.nomercy.tv/rpm/nomercy.repo</code>
             </div>
           </div>
           
@@ -130,7 +125,7 @@
             <p>Install the NoMercy MediaServer components:</p>
             <div class="code-block">
               <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-              <code>sudo dnf install nomercymediaserver nomercyapp</code>
+              <code>sudo dnf install nomercy</code>
             </div>
           </div>
         </div>
@@ -159,7 +154,11 @@
             <p>Add the NoMercy repository to your pacman configuration:</p>
             <div class="code-block">
               <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-              <code>echo "Server = https://repo.nomercy.tv/arch-packages/pool/x86_64" | sudo tee /etc/pacman.d/nomercy-mirrorlist && echo -e "\n[nomercy]\nInclude = /etc/pacman.d/nomercy-mirrorlist" | sudo tee -a /etc/pacman.conf </code>
+              <code>printf '
+[nomercy]
+SigLevel = PackageOptional DatabaseRequired
+Server = https://repo.nomercy.tv/arch/$arch
+' | sudo tee -a /etc/pacman.conf</code>
             </div>
           </div>
           
@@ -187,7 +186,7 @@
             <p>Install the NoMercy MediaServer components:</p>
             <div class="code-block">
               <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-              <code>sudo pacman -S nomercymediaserver nomercyapp</code>
+              <code>sudo pacman -S nomercy</code>
             </div>
           </div>
         </div>

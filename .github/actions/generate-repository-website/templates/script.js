@@ -1,5 +1,5 @@
 // Tab switching functionality
-function switchTab(tabName) {
+function switchTab(tabName, clickEvent) {
   // Hide all tab contents
   const contents = document.querySelectorAll('.tab-content');
   contents.forEach(content => content.classList.remove('active'));
@@ -11,8 +11,12 @@ function switchTab(tabName) {
   // Show selected tab content
   document.getElementById(tabName).classList.add('active');
 
-  // Add active class to clicked tab
-  event.target.classList.add('active');
+  // Add active class to the tab button. A click passes its event; on page
+  // load there is no event, so find the button by the tab it opens.
+  const button = clickEvent && clickEvent.currentTarget
+    ? clickEvent.currentTarget
+    : document.querySelector(`.nav-tab[onclick*="'${tabName}'"]`);
+  if (button) button.classList.add('active');
 
   // Update URL hash
   window.location.hash = tabName;
