@@ -24,11 +24,15 @@ permissions:
   id-token: write
 
 jobs:
-  update_packages:
+jobs:
+  # Builds and checks the whole tree. It has no environment, so a run from a
+  # branch (workflow_dispatch) can prove the build without being able to deploy.
+  build:
     runs-on: [self-hosted, Linux, X64, beast-unit]
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      tracked: ${{ steps.check.outputs.tracked }}
+      releases: ${{ steps.releases.outputs.releases }}
 
     steps:
       - uses: actions/checkout@v7
@@ -94,10 +98,6 @@ jobs:
             echo "No previous deployment found"
           fi
 
-      - name: Save deployed versions
-        if: steps.check.outputs.skip != 'true'
-        run: echo "${{ steps.check.outputs.tracked }}" > deployed_versions.txt
-
       - name: Create website directory
         if: steps.check.outputs.skip != 'true'
         run: mkdir -p ./website
@@ -142,92 +142,31 @@ jobs:
             exit 1
           fi
 
-      - name: Setup APT Repository
+      - name: Prepare signing keyring
         if: steps.check.outputs.skip != 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          LATEST="${{ steps.releases.outputs.latest }}"
+          # A temporary keyring, so the private key never lands in the runner's
+          # own default keyring where it would outlive the job.
+          GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=${GNUPGHOME}" >> "$GITHUB_ENV"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --homedir "$GNUPGHOME" --batch --import
 
-          # Create APT repository structure
-          mkdir -p website/apt/pool/main/n/nomercy
-          mkdir -p website/apt/dists/stable/main/binary-amd64
+      - name: Build and sign the apt, rpm and pacman repositories
+        if: steps.check.outputs.skip != 'true'
+        env:
+          LATEST: ${{ steps.releases.outputs.latest }}
+        run: bash .github/scripts/build-repo.sh
 
-          # Copy all DEB files
-          for deb in downloads/*_amd64.deb; do
-            [ -f "$deb" ] || continue
-            cp "$deb" "website/apt/pool/main/n/nomercy/"
-          done
-
-          # Create latest symlink
-          if [ -f "website/apt/pool/main/n/nomercy/nomercy_${LATEST}_amd64.deb" ]; then
-            cd website/apt/pool/main/n/nomercy
-            ln -sf "nomercy_${LATEST}_amd64.deb" "nomercy_latest_amd64.deb"
-            cd -
+      - name: Remove signing keyring
+        if: always()
+        run: |
+          if [ -n "${GNUPGHOME:-}" ] && [ -d "${GNUPGHOME}" ]; then
+            gpgconf --homedir "$GNUPGHOME" --kill gpg-agent || true
+            rm -rf "$GNUPGHOME"
           fi
-
-          # Generate Packages index
-          cd website/apt
-          dpkg-scanpackages --multiversion pool/ > dists/stable/main/binary-amd64/Packages
-          gzip -k -f dists/stable/main/binary-amd64/Packages
-          cd -
-
-          echo "=== APT pool contents ==="
-          find website/apt/pool -type f -name "*.deb"
-
-      - name: Setup RPM Repository
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          mkdir -p website/rpm/packages
-
-          # Copy all RPM files
-          cp downloads/*.rpm website/rpm/packages/ 2>/dev/null || echo "No RPM files to copy"
-
-          # Generate RPM repo metadata
-          cd website/rpm
-          createrepo_c . || echo "createrepo_c not available, skipping"
-          cd -
-
-      - name: Setup Arch Repository
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          mkdir -p website/arch/x86_64
-
-          # Copy all Arch packages
-          cp downloads/*.pkg.tar.zst website/arch/x86_64/ 2>/dev/null || echo "No Arch files to copy"
-
-      - name: Sign APT Repository
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          # Import GPG key
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-
-          cd website/apt/dists/stable
-
-          # Create Release file
-          cat > Release << 'EOF'
-          Origin: NoMercy Entertainment
-          Label: NoMercy
-          Suite: stable
-          Codename: stable
-          Version: 1.0
-          Architectures: amd64
-          Components: main
-          Description: NoMercy Entertainment Repository
-          EOF
-          echo "Date: $(date -u '+%a, %d %b %Y %H:%M:%S UTC')" >> Release
-          echo "SHA256:" >> Release
-
-          # Calculate hashes for metadata files
-          for file in main/binary-amd64/Packages main/binary-amd64/Packages.gz; do
-            if [ -f "$file" ]; then
-              sha256=$(sha256sum "${file}" | cut -d' ' -f1)
-              size=$(stat -c%s "${file}")
-              echo " ${sha256} ${size} ${file}" >> Release
-            fi
-          done
-
-          # Sign Release file
-          gpg --batch --yes --clear-sign -o InRelease Release
-          gpg --batch --yes --detach-sign --armor -o Release.gpg Release
 
       - name: Generate Repository Website
         if: steps.check.outputs.skip != 'true'
@@ -303,6 +242,17 @@ jobs:
           echo "$TAG" > website/android/latest.txt
           echo "Published $(basename "$APK") as android/nomercy.apk ($TAG)"
 
+      - name: Check the built repository
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          bash tests/check-tree.sh website
+          python3 tests/check-page.py website/index.html website
+          if command -v node >/dev/null; then
+            node tests/switch-tab.test.js
+          else
+            echo "::warning::node is not installed on this runner, skipped the page script test"
+          fi
+
       - name: Upload Pages artifact
         if: steps.check.outputs.skip != 'true'
         uses: actions/upload-pages-artifact@v5
@@ -313,16 +263,27 @@ jobs:
           # website and break the apt/rpm/arch asset paths.
           include-hidden-files: true
 
+  # Deploys only from master. A failed build never reaches this job, so Pages
+  # keeps serving the previous deploy (including android/nomercy.apk).
+  deploy:
+    needs: build
+    if: needs.build.outputs.skip != 'true' && github.ref == 'refs/heads/master'
+    runs-on: [self-hosted, Linux, X64, beast-unit]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
       - name: Deploy to GitHub Pages
-        if: steps.check.outputs.skip != 'true'
         id: deployment
         uses: actions/deploy-pages@v5
 
       - name: Commit version tracker
-        if: steps.check.outputs.skip != 'true'
         run: |
+          echo "${{ needs.build.outputs.tracked }}" > deployed_versions.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add deployed_versions.txt
-          git commit -m "Sync with releases: ${{ steps.releases.outputs.releases }}" || echo "No changes to commit"
+          git commit -m "Sync with releases: ${{ needs.build.outputs.releases }}" || echo "No changes to commit"
           git push
