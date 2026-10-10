@@ -27,6 +27,7 @@ jobs:
   # Builds and checks the whole tree. It has no environment, so a run from a
   # branch (workflow_dispatch) can prove the build without being able to deploy.
   build:
+    timeout-minutes: 7200
     runs-on: [self-hosted, Linux, X64, beast-unit]
     outputs:
       skip: ${{ steps.check.outputs.skip }}
@@ -265,6 +266,7 @@ jobs:
   # Deploys only from master. A failed build never reaches this job, so Pages
   # keeps serving the previous deploy (including android/nomercy.apk).
   deploy:
+    timeout-minutes: 7200
     needs: build
     if: needs.build.outputs.skip != 'true' && github.ref == 'refs/heads/master'
     runs-on: [self-hosted, Linux, X64, beast-unit]
