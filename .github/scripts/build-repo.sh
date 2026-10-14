@@ -41,15 +41,16 @@ debs=("$DOWNLOADS"/*_amd64.deb)
 [ "${#debs[@]}" -gt 0 ] || die "no .deb packages in $DOWNLOADS"
 cp "${debs[@]}" "$OUT/apt/pool/main/n/nomercy/"
 
-if [ -f "$OUT/apt/pool/main/n/nomercy/nomercy_${LATEST}_amd64.deb" ]; then
-  ln -sf "nomercy_${LATEST}_amd64.deb" "$OUT/apt/pool/main/n/nomercy/nomercy_latest_amd64.deb"
-fi
-
 (
   cd "$OUT/apt"
   dpkg-scanpackages --multiversion pool/ > dists/stable/main/binary-amd64/Packages
   gzip -k -f dists/stable/main/binary-amd64/Packages
 )
+
+# The index is built; the files themselves are served from the media-server
+# GitHub releases. A Cloudflare redirect rule on repo.nomercy.tv maps
+# pool/main/n/nomercy/nomercy_<version>_amd64.deb to release v<version>.
+rm -f "$OUT"/apt/pool/main/n/nomercy/*.deb
 
 (
   cd "$OUT/apt/dists/stable"
@@ -91,6 +92,8 @@ else
     | tar -C "$OUT/rpm" -xf -
 fi
 [ -f "$OUT/rpm/repodata/repomd.xml" ] || die "createrepo_c did not write repodata/repomd.xml"
+# Served from the GitHub releases through the redirect for packages/nomercy-<version>-1.x86_64.rpm.
+rm -rf "$OUT/rpm/packages"
 
 # Packages are not signed yet. The signed repomd.xml holds their checksums, so
 # repo_gpgcheck=1 protects them; gpgcheck=0 until the packages are signed too.
@@ -115,7 +118,8 @@ LATEST_PKG="nomercy-${LATEST}-1-x86_64.pkg.tar.zst"
 cp "${pkgs[@]}" "$OUT/arch/x86_64/"
 
 # pacman keeps one version per package name in the database: the latest.
-# Older files stay downloadable for anyone pinning a version.
+# Every version stays downloadable from its GitHub release through the redirect
+# for x86_64/nomercy-<version>-1-x86_64.pkg.tar.zst.
 DB_DIR="$OUT/arch/x86_64"
 if command -v repo-add >/dev/null; then
   (cd "$DB_DIR" && repo-add nomercy.db.tar.gz "$LATEST_PKG")
@@ -133,6 +137,7 @@ rm -f "$DB_DIR/nomercy.db" "$DB_DIR/nomercy.files"
 cp "$DB_DIR/nomercy.db.tar.gz" "$DB_DIR/nomercy.db"
 cp "$DB_DIR/nomercy.files.tar.gz" "$DB_DIR/nomercy.files"
 sign --detach-sign -o "$DB_DIR/nomercy.db.sig" "$DB_DIR/nomercy.db"
+rm -f "$DB_DIR"/*.pkg.tar.zst
 
 echo "=== Tree built ==="
 find "$OUT" -maxdepth 3 -not -name '*.deb' -not -name '*.rpm' -not -name '*.zst' | sort | head -60

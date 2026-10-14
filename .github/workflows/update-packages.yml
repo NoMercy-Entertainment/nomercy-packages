@@ -280,6 +280,13 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
 
+      # The site holds only the indexes; every package downloads from its
+      # media-server release through a Cloudflare redirect rule. This proves each
+      # indexed file still redirects to the right release (by SHA-256), so a
+      # missing rule or release fails here instead of on a user's machine.
+      - name: Check every indexed package downloads
+        run: python3 tests/check-downloads.py https://repo.nomercy.tv
+
       - name: Commit version tracker
         run: |
           echo "${{ needs.build.outputs.tracked }}" > deployed_versions.txt
