@@ -80,6 +80,16 @@ jobs:
           APK_TAG=$(gh release list -R NoMercy-Entertainment/nomercy-app-kmp             --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
           RELEASES="${RELEASES} apk:${APK_TAG:-none}"
           echo "Android release: ${APK_TAG:-none}"
+
+          # A new release of a KMP library changes the Maven index. Its newest
+          # release (and asset count, so the backfill of an older tag counts too)
+          # is part of what was deployed.
+          for LIB in nomercy-player-core-kmp nomercy-video-player-kmp nomercy-music-player-kmp; do
+            LIB_STATE=$(gh api "repos/NoMercy-Entertainment/${LIB}/releases?per_page=100" \
+              --jq '[.[] | select(.draft == false)] | "\(.[0].tag_name // "none")+\(map(.assets | length) | add // 0)"' 2>/dev/null || echo unknown)
+            RELEASES="${RELEASES} ${LIB}:${LIB_STATE}"
+            echo "${LIB}: ${LIB_STATE}"
+          done
           echo "tracked=${RELEASES}" >> $GITHUB_OUTPUT
 
           if [ -f "deployed_versions.txt" ]; then
@@ -159,6 +169,14 @@ jobs:
         env:
           LATEST: ${{ steps.releases.outputs.latest }}
         run: bash .github/scripts/build-repo.sh
+
+      # Only maven-metadata.xml per artifact; the artifact files stay on each
+      # library's GitHub release and Cloudflare redirects to them.
+      - name: Build the Maven index
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/build-maven.py website
 
       - name: Remove signing keyring
         if: always()

@@ -10,6 +10,7 @@ GitHub release. Per entry it checks that
 so a redirect to the wrong release fails here instead of on a user's machine.
 """
 import gzip
+import hashlib
 import io
 import re
 import subprocess
@@ -92,5 +93,40 @@ for path, want in entries:
         continue
     print(f'ok   {path} -> {target[len(RELEASES):]} ({status})')
 
-print(f'check-downloads: {len(entries) - failed} of {len(entries)} downloadable')
+# Maven: the newest version of each library's root artifact, the way Gradle
+# fetches it. The .sha1 is a separate asset of the same release, so a redirect
+# to the wrong release (or none) fails here.
+MAVEN_ROOTS = {
+    'nomercy-player-core-kmp': 'https://github.com/NoMercy-Entertainment/nomercy-player-core-kmp/releases/download/',
+    'nomercy-video-player-kmp': 'https://github.com/NoMercy-Entertainment/nomercy-video-player-kmp/releases/download/',
+    'nomercy-music-player-kmp': 'https://github.com/NoMercy-Entertainment/nomercy-music-player-kmp/releases/download/',
+}
+checked = len(entries)
+for artifact, release_base in MAVEN_ROOTS.items():
+    folder = f'{BASE}/maven/tv/nomercy/{artifact}'
+    try:
+        latest = re.search(r'<latest>([^<]+)</latest>', get(f'{folder}/maven-metadata.xml').decode()).group(1)
+    except Exception as e:  # noqa: BLE001
+        print(f'FAIL maven {artifact}: metadata: {e}')
+        failed += 1
+        checked += 1
+        continue
+    for ext in ('pom', 'module'):
+        checked += 1
+        path = f'maven/tv/nomercy/{artifact}/{latest}/{artifact}-{latest}.{ext}'
+        try:
+            target = first_hop(f'{BASE}/{path}')
+            if not target.startswith(release_base):
+                raise RuntimeError(f'redirects to {target}, not the {artifact} releases')
+            body = get(f'{BASE}/{path}')
+            want = get(f'{BASE}/{path}.sha1').decode().split()[0]
+            if hashlib.sha1(body).hexdigest() != want:
+                raise RuntimeError('sha1 does not match its .sha1 file')
+        except Exception as e:  # noqa: BLE001
+            print(f'FAIL {path}: {e}')
+            failed += 1
+            continue
+        print(f'ok   {path}')
+
+print(f'check-downloads: {checked - failed} of {checked} downloadable')
 sys.exit(1 if failed or not entries else 0)
