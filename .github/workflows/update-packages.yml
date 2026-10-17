@@ -80,6 +80,11 @@ jobs:
           APK_TAG=$(gh release list -R NoMercy-Entertainment/nomercy-app-kmp             --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
           RELEASES="${RELEASES} apk:${APK_TAG:-none}"
           echo "Android release: ${APK_TAG:-none}"
+          # Asset IDs change when any library adds Maven files to an existing
+          # release, so a late upload also rebuilds Pages metadata.
+          MAVEN_STATE=$(python3 .github/scripts/build-maven-metadata.py --state-only)
+          RELEASES="${RELEASES} maven:${MAVEN_STATE}"
+          echo "Maven release state: ${MAVEN_STATE}"
           echo "tracked=${RELEASES}" >> $GITHUB_OUTPUT
 
           if [ -f "deployed_versions.txt" ]; then
@@ -194,6 +199,15 @@ jobs:
 
           echo "=== Website contents ==="
           find website -type f | head -50
+
+      - name: Build Maven version metadata
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 .github/scripts/build-maven-metadata.py --output website/maven
+          test -f website/maven/tv/nomercy/nomercy-video-player-compose/maven-metadata.xml
+          test -f website/maven/tv/nomercy/nomercy-player-core-kmp/maven-metadata.xml
 
       # The Android app is built in nomercy-app-kmp, which is private, so a
       # release asset URL there is only downloadable by someone with repo
