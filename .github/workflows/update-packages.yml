@@ -221,8 +221,8 @@ jobs:
       # fetches it on demand.
       # This repo is already public and already fronted by repo.nomercy.tv, so
       # the APK rides along with the apt/rpm packages instead of needing new
-      # hosting. Missing or unreachable is a warning, not a failure: the Linux
-      # packages are this job's actual product.
+      # hosting. A tagged release must download successfully; otherwise a full
+      # Pages deploy would remove the previous APK and mark the tag as deployed.
       - name: Publish the Android APK
         if: steps.check.outputs.skip != 'true'
         env:
@@ -242,11 +242,11 @@ jobs:
           # "no .apk asset" for ANY non-zero exit, which sent me looking at the
           # release (it had one) instead of at the real error.
           if ! gh release download "$TAG" -R NoMercy-Entertainment/nomercy-app-kmp             --pattern "*.apk" --dir website/android --clobber 2>download.err; then
-            echo "::warning::Could not download the APK from $TAG:"
-            sed 's/^/::warning::  /' download.err || true
+            echo "::error::Could not download the APK from $TAG:"
+            sed 's/^/::error::  /' download.err || true
             echo "--- assets on that release ---"
             gh release view "$TAG" -R NoMercy-Entertainment/nomercy-app-kmp               --json assets --jq '.assets[].name' || true
-            exit 0
+            exit 1
           fi
 
           # A stable filename so the website can link to one URL forever, next
@@ -261,6 +261,7 @@ jobs:
         run: |
           bash tests/check-tree.sh website
           python3 tests/check-page.py website/index.html website
+          python3 tests/check-apk-download.py
           if command -v node >/dev/null; then
             node tests/switch-tab.test.js
           else
