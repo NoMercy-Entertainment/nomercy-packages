@@ -7,6 +7,7 @@ Checks, per tab:
   a) the packages named in the install command equal the real package "nomercy"
   b) every https://repo.nomercy.tv/... path the commands name exists in the tree
   c) the apt key step creates /etc/apt/keyrings before it writes into it
+Also checks that every local href points to a file in the built tree.
 """
 import html
 import re
@@ -29,9 +30,13 @@ class Tabs(HTMLParser):
         self.in_code = False
         self.buf = []
         self.tabs = {}
+        self.local_hrefs = []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        href = a.get("href")
+        if href and not href.startswith(("https://", "http://", "#", "mailto:")):
+            self.local_hrefs.append(href)
         if tag == "div":
             self.depth += 1
             if "tab-content" in (a.get("class") or "").split() and self.tab is None:
@@ -73,6 +78,10 @@ def main():
     parser = Tabs()
     parser.feed(page.read_text(encoding="utf-8"))
     failures = []
+    for href in parser.local_hrefs:
+        target = tree / href.split("?", 1)[0].split("#", 1)[0].lstrip("/")
+        if not target.is_file():
+            failures.append(f"local href {href} does not exist in the tree")
     for tab, blocks in parser.tabs.items():
         for i, cmd in enumerate(blocks):
             m = re.search(r"(?:apt install|dnf install|pacman -S)\s+(.*)$", cmd, re.M)
