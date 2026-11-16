@@ -2,12 +2,23 @@ name: Verify self-hosted Maven
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to resolve. Empty = the newest version in the live metadata.'
+        required: false
+        default: ''
+  # Each finished Pages update is checked, so a broken metadata file or
+  # redirect shows up as a red run.
+  workflow_run:
+    workflows: ['Update Package Repository']
+    types: [completed]
 
 permissions:
   contents: read
 
 jobs:
   resolve:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -18,9 +29,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.2.1'
+      # video-player-compose releases after player-core, so its newest version
+      # exists for both libraries.
+      - name: Pick the version
+        id: pick
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          METADATA_URL: https://repo.nomercy.tv/maven/tv/nomercy/nomercy-video-player-compose/maven-metadata.xml
+        run: |
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version=$(curl -fsS "$METADATA_URL" | python3 -c 'import sys, xml.etree.ElementTree as tree; print(tree.parse(sys.stdin).findtext("versioning/release") or "")')
+          fi
+          test -n "$version"
+          echo "Resolving tv.nomercy $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # Generate hashes in this disposable consumer, then require them during a
       # second fresh resolution. The second run must use strict verification.
       - name: Record resolved artifact hashes
-        run: gradle -p tests/maven-consumer resolveMaven --write-verification-metadata sha256 --refresh-dependencies
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: gradle -p tests/maven-consumer resolveMaven "-Prelease=$VERSION" --write-verification-metadata sha256 --refresh-dependencies
       - name: Resolve Android and JVM artifacts with strict verification
-        run: gradle -p tests/maven-consumer resolveMaven --dependency-verification strict --refresh-dependencies
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: gradle -p tests/maven-consumer resolveMaven "-Prelease=$VERSION" --dependency-verification strict --refresh-dependencies

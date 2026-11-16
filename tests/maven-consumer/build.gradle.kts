@@ -1,6 +1,7 @@
 plugins { base }
 
-val release = "0.2.10"
+val release = providers.gradleProperty("release").orNull?.takeIf { it.isNotBlank() }
+    ?: error("pass -Prelease=<version>")
 val coordinates = listOf(
     "nomercy-video-player-compose",
     "nomercy-video-player-compose-android",
